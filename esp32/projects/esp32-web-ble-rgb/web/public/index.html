@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arduino Web Bluetooth RGB LED</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    .controls {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 5px;
+    }
+    .slider-group {
+      margin-bottom: 20px;
+    }
+    .slider-group label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .slider-group input[type="range"] {
+      width: 100%;
+      height: 15px;
+      border-radius: 8px;
+      appearance: none;
+      background: #ddd;
+      outline: none;
+    }
+    .slider-group input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 25px;
+      height: 25px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    #r::-webkit-slider-thumb { background: #dc3545; }
+    #g::-webkit-slider-thumb { background: #28a745; }
+    #b::-webkit-slider-thumb { background: #007bff; }
+    .slider-value {
+      text-align: right;
+      font-family: monospace;
+      font-size: 14px;
+      color: #666;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .status.connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status.disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .color-preview {
+      width: 100%;
+      height: 80px;
+      border-radius: 8px;
+      margin-top: 20px;
+      border: 2px solid #ccc;
+      transition: background-color 0.1s;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Web Bluetooth RGB LED</h1>
+    <div id="not-supported">
+      <p>⚠️ Web Bluetooth is not supported in this browser.</p>
+      <p>Please use Chrome, Edge, or Opera on desktop, or Chrome on Android.</p>
+    </div>
+    <div id="supported">
+      <div id="not-connected">
+        <button id="connectButton">Connect to BLE Device</button>
+        <p class="status disconnected">Not connected</p>
+      </div>
+      <div id="connected">
+        <button id="disconnectButton">Disconnect</button>
+        <p class="status connected">✓ Connected to <span id="deviceName"></span></p>
+        <h3>RGB Controls:</h3>
+        <div class="controls">
+          <div class="slider-group">
+            <label for="r">Red</label>
+            <input type="range" min="0" max="255" value="0" id="r">
+            <div class="slider-value" id="rValue">0</div>
+          </div>
+          <div class="slider-group">
+            <label for="g">Green</label>
+            <input type="range" min="0" max="255" value="0" id="g">
+            <div class="slider-value" id="gValue">0</div>
+          </div>
+          <div class="slider-group">
+            <label for="b">Blue</label>
+            <input type="range" min="0" max="255" value="0" id="b">
+            <div class="slider-value" id="bValue">0</div>
+          </div>
+          <div id="colorPreview" class="color-preview" style="background-color: rgb(0, 0, 0);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+
+    // app state
+    const hasWebBluetooth = "bluetooth" in navigator;
+    let isConnected = false;
+    let bluetoothDevice = null;
+    let rCharacteristic = null;
+    let gCharacteristic = null;
+    let bCharacteristic = null;
+
+    // BLE UUIDs matching the Arduino code
+    const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const CHARACTERISTIC_UUID_R = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+    const CHARACTERISTIC_UUID_G = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+    const CHARACTERISTIC_UUID_B = '6e400004-b5a3-f393-e0a9-e50e24dcca9e';
+
+    const $notSupported = document.getElementById("not-supported");
+    const $supported = document.getElementById("supported");
+    const $notConnected = document.getElementById("not-connected");
+    const $connected = document.getElementById("connected");
+    const $connectButton = document.getElementById("connectButton");
+    const $disconnectButton = document.getElementById("disconnectButton");
+    const $deviceName = document.getElementById("deviceName");
+
+    const $r = document.getElementById("r");
+    const $g = document.getElementById("g");
+    const $b = document.getElementById("b");
+    const $rValue = document.getElementById("rValue");
+    const $gValue = document.getElementById("gValue");
+    const $bValue = document.getElementById("bValue");
+    const $colorPreview = document.getElementById("colorPreview");
+
+    const init = async () => {
+      displaySupportedState();
+      if (!hasWebBluetooth) return;
+      displayConnectionState();
+
+      $connectButton.addEventListener("click", handleClickConnect);
+      $disconnectButton.addEventListener("click", handleClickDisconnect);
+
+      $r.addEventListener("input", handleInputR);
+      $g.addEventListener("input", handleInputG);
+      $b.addEventListener("input", handleInputB);
+    };
+
+    const handleClickConnect = async () => {
+      try {
+        console.log('Requesting Bluetooth Device...');
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [SERVICE_UUID] }],
+        });
+
+        console.log('Connecting to GATT Server...');
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+        
+        const server = await bluetoothDevice.gatt.connect();
+        console.log('Getting Service...');
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        
+        console.log('Getting R Characteristic...');
+        rCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID_R);
+        
+        console.log('Getting G Characteristic...');
+        gCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID_G);
+        
+        console.log('Getting B Characteristic...');
+        bCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID_B);
+        
+        isConnected = true;
+        $deviceName.textContent = bluetoothDevice.name || 'Unknown Device';
+        displayConnectionState();
+        
+        console.log('Connected and ready for RGB control!');
+      } catch (error) {
+        console.error('Connection failed:', error);
+        alert('Failed to connect: ' + error.message);
+      }
+    };
+
+    const handleClickDisconnect = async () => {
+      if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+      }
+    };
+
+    const onDisconnected = () => {
+      console.log('Bluetooth Device disconnected');
+      isConnected = false;
+      bluetoothDevice = null;
+      rCharacteristic = null;
+      gCharacteristic = null;
+      bCharacteristic = null;
+      displayConnectionState();
+    };
+
+    const updateColorPreview = () => {
+      const r = parseInt($r.value);
+      const g = parseInt($g.value);
+      const b = parseInt($b.value);
+      $colorPreview.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+    };
+
+    // Queue to serialize BLE write operations
+    let writeQueue = Promise.resolve();
+
+    const queueWrite = (characteristic, value) => {
+      writeQueue = writeQueue.then(async () => {
+        try {
+          await characteristic.writeValueWithoutResponse(new Uint8Array([value]));
+        } catch (error) {
+          console.error('Write failed:', error);
+        }
+      });
+    };
+
+    const handleInputR = async () => {
+      const value = parseInt($r.value);
+      $rValue.textContent = value;
+      updateColorPreview();
+
+      if (!isConnected || !rCharacteristic) return;
+      queueWrite(rCharacteristic, value);
+    };
+
+    const handleInputG = async () => {
+      const value = parseInt($g.value);
+      $gValue.textContent = value;
+      updateColorPreview();
+
+      if (!isConnected || !gCharacteristic) return;
+      queueWrite(gCharacteristic, value);
+    };
+
+    const handleInputB = async () => {
+      const value = parseInt($b.value);
+      $bValue.textContent = value;
+      updateColorPreview();
+
+      if (!isConnected || !bCharacteristic) return;
+      queueWrite(bCharacteristic, value);
+    };
+
+    const displaySupportedState = () => {
+      if (hasWebBluetooth) {
+        $notSupported.style.display = "none";
+        $supported.style.display = "block";
+      } else {
+        $notSupported.style.display = "block";
+        $supported.style.display = "none";
+      }
+    };
+
+    const displayConnectionState = () => {
+      if (isConnected) {
+        $notConnected.style.display = "none";
+        $connected.style.display = "block";
+      } else {
+        $notConnected.style.display = "block";
+        $connected.style.display = "none";
+      }
+    };
+
+    init();
+
+  </script>
+</body>
+</html>

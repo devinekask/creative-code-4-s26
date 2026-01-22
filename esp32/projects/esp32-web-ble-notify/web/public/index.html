@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arduino Web Bluetooth Notifications</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    #notifications {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .notification {
+      padding: 8px;
+      margin: 5px 0;
+      background-color: white;
+      border-left: 3px solid #007bff;
+      font-family: monospace;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .status.connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status.disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Web Bluetooth Notifications</h1>
+    <div id="not-supported">
+      <p>⚠️ Web Bluetooth is not supported in this browser.</p>
+      <p>Please use Chrome, Edge, or Opera on desktop, or Chrome on Android.</p>
+    </div>
+    <div id="supported">
+      <div id="not-connected">
+        <button id="connectButton">Connect to BLE Device</button>
+        <p class="status disconnected">Not connected</p>
+      </div>
+      <div id="connected">
+        <button id="disconnectButton">Disconnect</button>
+        <p class="status connected">✓ Connected to <span id="deviceName"></span></p>
+        <h3>Received Notifications:</h3>
+        <div id="notifications">
+          <p><em>Waiting for notifications...</em></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+
+    // app state
+    const hasWebBluetooth = "bluetooth" in navigator;
+    let isConnected = false;
+    let bluetoothDevice = null;
+    let characteristic = null;
+
+    // UUIDs - these should match your ESP32 BLE service
+    // Using standard UUIDs for demonstration - adjust to match your device
+    const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+    const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+
+    const $notSupported = document.getElementById("not-supported");
+    const $supported = document.getElementById("supported");
+    const $notConnected = document.getElementById("not-connected");
+    const $connected = document.getElementById("connected");
+    const $connectButton = document.getElementById("connectButton");
+    const $disconnectButton = document.getElementById("disconnectButton");
+    const $deviceName = document.getElementById("deviceName");
+    const $notifications = document.getElementById("notifications");
+
+    const init = async () => {
+      displaySupportedState();
+      if (!hasWebBluetooth) return;
+      displayConnectionState();
+
+      $connectButton.addEventListener("click", handleClickConnect);
+      $disconnectButton.addEventListener("click", handleClickDisconnect);
+    };
+
+    const handleClickConnect = async () => {
+      try {
+        console.log('Requesting Bluetooth Device...');
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [SERVICE_UUID] }],
+          // Alternatively, use acceptAllDevices for testing:
+          // acceptAllDevices: true,
+          // optionalServices: [SERVICE_UUID]
+        });
+
+        console.log('Connecting to GATT Server...');
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+        
+        const server = await bluetoothDevice.gatt.connect();
+        console.log('Getting Service...');
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        
+        console.log('Getting Characteristic...');
+        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        
+        console.log('Starting Notifications...');
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', handleNotification);
+        
+        isConnected = true;
+        $deviceName.textContent = bluetoothDevice.name || 'Unknown Device';
+        $notifications.innerHTML = '<p><em>Waiting for notifications...</em></p>';
+        displayConnectionState();
+        
+        console.log('Connected and listening for notifications!');
+      } catch (error) {
+        console.error('Connection failed:', error);
+        alert('Failed to connect: ' + error.message);
+      }
+    };
+
+    const handleClickDisconnect = async () => {
+      if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+      }
+    };
+
+    const onDisconnected = () => {
+      console.log('Bluetooth Device disconnected');
+      isConnected = false;
+      bluetoothDevice = null;
+      characteristic = null;
+      displayConnectionState();
+    };
+
+    const handleNotification = (event) => {
+      const value = event.target.value;
+      // Decode the received data
+      const decoder = new TextDecoder('utf-8');
+      const data = decoder.decode(value);
+      
+      console.log('Notification received:', data);
+      
+      // Try to parse as JSON, otherwise display as text
+      let displayData;
+      try {
+        const jsonData = JSON.parse(data);
+        displayData = JSON.stringify(jsonData, null, 2);
+      } catch {
+        displayData = data;
+      }
+      
+      // Add notification to the list
+      const timestamp = new Date().toLocaleTimeString();
+      const notificationEl = document.createElement('div');
+      notificationEl.className = 'notification';
+      notificationEl.innerHTML = `<strong>${timestamp}</strong>: ${displayData}`;
+      
+      // Remove "waiting" message if present
+      const waitingMsg = $notifications.querySelector('em');
+      if (waitingMsg) {
+        waitingMsg.parentElement.remove();
+      }
+      
+      // Add new notification at the top
+      $notifications.insertBefore(notificationEl, $notifications.firstChild);
+      
+      // Limit to last 50 notifications
+      while ($notifications.children.length > 50) {
+        $notifications.removeChild($notifications.lastChild);
+      }
+    };
+
+    const displaySupportedState = () => {
+      if (hasWebBluetooth) {
+        $notSupported.style.display = "none";
+        $supported.style.display = "block";
+      } else {
+        $notSupported.style.display = "block";
+        $supported.style.display = "none";
+      }
+    };
+
+    const displayConnectionState = () => {
+      if (isConnected) {
+        $notConnected.style.display = "none";
+        $connected.style.display = "block";
+      } else {
+        $notConnected.style.display = "block";
+        $connected.style.display = "none";
+      }
+    };
+
+    init();
+
+  </script>
+</body>
+</html>

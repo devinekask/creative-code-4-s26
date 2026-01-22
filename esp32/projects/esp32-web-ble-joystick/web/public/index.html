@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arduino Web Bluetooth Joystick</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    #notifications {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .notification {
+      padding: 8px;
+      margin: 5px 0;
+      background-color: white;
+      border-left: 3px solid #007bff;
+      font-family: monospace;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .status.connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status.disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Web Bluetooth Joystick</h1>
+    <div id="not-supported">
+      <p>⚠️ Web Bluetooth is not supported in this browser.</p>
+      <p>Please use Chrome, Edge, or Opera on desktop, or Chrome on Android.</p>
+    </div>
+    <div id="supported">
+      <div id="not-connected">
+        <button id="connectButton">Connect to BLE Device</button>
+        <p class="status disconnected">Not connected</p>
+      </div>
+      <div id="connected">
+        <button id="disconnectButton">Disconnect</button>
+        <p class="status connected">✓ Connected to <span id="deviceName"></span></p>
+        <h3>Joystick Values:</h3>
+        <div id="notifications">
+          <p><em>Waiting for data...</em></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+
+    // app state
+    const hasWebBluetooth = "bluetooth" in navigator;
+    let isConnected = false;
+    let bluetoothDevice = null;
+    let characteristicX = null;
+    let characteristicY = null;
+    let characteristicButton = null;
+
+    // Joystick state
+    let joystickState = { x: 0, y: 0, button: false };
+
+    // UUIDs - these should match your ESP32 BLE service
+    const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const CHARACTERISTIC_X_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+    const CHARACTERISTIC_Y_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+    const CHARACTERISTIC_BUTTON_UUID = '6e400004-b5a3-f393-e0a9-e50e24dcca9e';
+
+    const $notSupported = document.getElementById("not-supported");
+    const $supported = document.getElementById("supported");
+    const $notConnected = document.getElementById("not-connected");
+    const $connected = document.getElementById("connected");
+    const $connectButton = document.getElementById("connectButton");
+    const $disconnectButton = document.getElementById("disconnectButton");
+    const $deviceName = document.getElementById("deviceName");
+    const $notifications = document.getElementById("notifications");
+
+    const init = async () => {
+      displaySupportedState();
+      if (!hasWebBluetooth) return;
+      displayConnectionState();
+
+      $connectButton.addEventListener("click", handleClickConnect);
+      $disconnectButton.addEventListener("click", handleClickDisconnect);
+    };
+
+    const handleClickConnect = async () => {
+      try {
+        console.log('Requesting Bluetooth Device...');
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [SERVICE_UUID] }],
+          // Alternatively, use acceptAllDevices for testing:
+          // acceptAllDevices: true,
+          // optionalServices: [SERVICE_UUID]
+        });
+
+        console.log('Connecting to GATT Server...');
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+        
+        const server = await bluetoothDevice.gatt.connect();
+        console.log('Getting Service...');
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        
+        console.log('Getting Characteristics...');
+        characteristicX = await service.getCharacteristic(CHARACTERISTIC_X_UUID);
+        characteristicY = await service.getCharacteristic(CHARACTERISTIC_Y_UUID);
+        characteristicButton = await service.getCharacteristic(CHARACTERISTIC_BUTTON_UUID);
+        
+        console.log('Starting Notifications...');
+        await characteristicX.startNotifications();
+        await characteristicY.startNotifications();
+        await characteristicButton.startNotifications();
+        
+        characteristicX.addEventListener('characteristicvaluechanged', (e) => handleNotification(e, 'x'));
+        characteristicY.addEventListener('characteristicvaluechanged', (e) => handleNotification(e, 'y'));
+        characteristicButton.addEventListener('characteristicvaluechanged', (e) => handleNotification(e, 'button'));
+        
+        isConnected = true;
+        $deviceName.textContent = bluetoothDevice.name || 'Unknown Device';
+        $notifications.innerHTML = '<p><em>Waiting for notifications...</em></p>';
+        displayConnectionState();
+        
+        console.log('Connected and listening for notifications!');
+      } catch (error) {
+        console.error('Connection failed:', error);
+        alert('Failed to connect: ' + error.message);
+      }
+    };
+
+    const handleClickDisconnect = async () => {
+      if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+      }
+    };
+
+    const onDisconnected = () => {
+      console.log('Bluetooth Device disconnected');
+      isConnected = false;
+      bluetoothDevice = null;
+      characteristicX = null;
+      characteristicY = null;
+      characteristicButton = null;
+      displayConnectionState();
+    };
+
+    const handleNotification = (event, type) => {
+      const value = event.target.value;
+      
+      // Read as 32-bit integer (little-endian) - matches Arduino's 4-byte int
+      const intValue = value.getInt32(0, true); // true = little-endian
+      
+      if (type === 'x') {
+        joystickState.x = intValue;
+      } else if (type === 'y') {
+        joystickState.y = intValue;
+      } else if (type === 'button') {
+        // Button is active LOW (pressed = 0)
+        joystickState.button = intValue === 0;
+      }
+      
+      console.log('Joystick state:', joystickState);
+      updateDisplay();
+    };
+
+    const updateDisplay = () => {
+      // Remove "waiting" message if present
+      const waitingMsg = $notifications.querySelector('em');
+      if (waitingMsg) {
+        waitingMsg.parentElement.remove();
+      }
+
+      // Update or create the value display
+      let valueDisplay = document.getElementById('valueDisplay');
+      if (!valueDisplay) {
+        valueDisplay = document.createElement('div');
+        valueDisplay.id = 'valueDisplay';
+        valueDisplay.className = 'notification';
+        $notifications.appendChild(valueDisplay);
+      }
+      
+      // Calculate percentages (assuming 12-bit ADC: 0-4095)
+      const xPercent = Math.round((joystickState.x / 4095) * 100);
+      const yPercent = Math.round((joystickState.y / 4095) * 100);
+      const buttonState = joystickState.button ? '🔴 Pressed' : '⚪ Released';
+      
+      valueDisplay.innerHTML = `
+        <div style="margin-bottom: 15px;">
+          <strong>X Axis:</strong> ${joystickState.x} (${xPercent}%)
+          <div style="background: #ddd; height: 15px; border-radius: 8px; margin-top: 5px;">
+            <div style="background: #007bff; height: 100%; width: ${xPercent}%; border-radius: 8px; transition: width 0.05s;"></div>
+          </div>
+        </div>
+        <div style="margin-bottom: 15px;">
+          <strong>Y Axis:</strong> ${joystickState.y} (${yPercent}%)
+          <div style="background: #ddd; height: 15px; border-radius: 8px; margin-top: 5px;">
+            <div style="background: #28a745; height: 100%; width: ${yPercent}%; border-radius: 8px; transition: width 0.05s;"></div>
+          </div>
+        </div>
+        <div>
+          <strong>Button:</strong> ${buttonState}
+        </div>
+      `;
+    };
+
+    const displaySupportedState = () => {
+      if (hasWebBluetooth) {
+        $notSupported.style.display = "none";
+        $supported.style.display = "block";
+      } else {
+        $notSupported.style.display = "block";
+        $supported.style.display = "none";
+      }
+    };
+
+    const displayConnectionState = () => {
+      if (isConnected) {
+        $notConnected.style.display = "none";
+        $connected.style.display = "block";
+      } else {
+        $notConnected.style.display = "block";
+        $connected.style.display = "none";
+      }
+    };
+
+    init();
+
+  </script>
+</body>
+</html>

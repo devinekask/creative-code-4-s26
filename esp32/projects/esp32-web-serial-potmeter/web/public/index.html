@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arduino Web Serial Potmeter</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    #potmeterDisplay {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 5px;
+    }
+    .values {
+      padding: 8px;
+      margin: 5px 0;
+      background-color: white;
+      border-left: 3px solid #007bff;
+      font-family: monospace;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .status.connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status.disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Web Serial Potmeter</h1>
+    <div id="not-supported">
+      <p>⚠️ Web Serial is not supported in this browser.</p>
+      <p>Please use Chrome or Edge on desktop.</p>
+    </div>
+    <div id="supported">
+      <div id="not-connected">
+        <button id="connectButton">Connect to Serial Device</button>
+        <p class="status disconnected">Not connected</p>
+      </div>
+      <div id="connected">
+        <button id="disconnectButton">Disconnect</button>
+        <p class="status connected">✓ Connected to Arduino</p>
+        <h3>Potmeter Value:</h3>
+        <div id="potmeterDisplay">
+          <div id="potmeterValues" class="values">
+            <p><em>Waiting for data...</em></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+
+    // app state
+    const hasWebSerial = "serial" in navigator;
+    let isConnected = false;
+    let currentPort = null;
+    let currentReader = null;
+    let readableStreamClosed = null;
+    let keepReading = true;
+
+    const $notSupported = document.getElementById("not-supported");
+    const $supported = document.getElementById("supported");
+    const $notConnected = document.getElementById("not-connected");
+    const $connected = document.getElementById("connected");
+
+    const $connectButton = document.getElementById("connectButton");
+    const $disconnectButton = document.getElementById("disconnectButton");
+    const $potmeterValues = document.getElementById("potmeterValues");
+
+    const boardSettings = {usbProductId: 21971, usbVendorId: 6790};
+    let connectedArduinoPorts = [];
+
+    const init = async () => {
+      displaySupportedState();
+      if (!hasWebSerial) return;
+      displayConnectionState();
+      navigator.serial.addEventListener('connect', (e) => {
+        const port = e.target;
+        const info = port.getInfo();
+        console.log('connect', port, info);
+        if (isArduinoPort(port)) {
+          connectedArduinoPorts.push(port);
+          if (!isConnected) {
+            connect(port);
+          }
+        }
+      });
+
+      navigator.serial.addEventListener('disconnect', (e) => {
+        const port = e.target;
+        const info = port.getInfo();
+        console.log('disconnect', port, info);
+        connectedArduinoPorts = connectedArduinoPorts.filter(p => p !== port);
+      });
+
+      const ports = await navigator.serial.getPorts();
+      connectedArduinoPorts = ports.filter(isArduinoPort);
+
+      console.log('Ports');
+      ports.forEach(port => {
+        const info = port.getInfo();
+        console.log(info);
+      });
+      console.log('Connected Arduino ports');
+      connectedArduinoPorts.forEach(port => {
+        const info = port.getInfo();
+        console.log(info);
+      });
+
+      if (connectedArduinoPorts.length > 0) {
+        connect(connectedArduinoPorts[0]);
+      }
+
+      $connectButton.addEventListener("click", handleClickConnect);
+      $disconnectButton.addEventListener("click", handleClickDisconnect);
+    };
+
+    const isArduinoPort = (port) => {
+      const info = port.getInfo();
+      return info.usbProductId === boardSettings.usbProductId && info.usbVendorId === boardSettings.usbVendorId;
+    };
+
+    const handleClickConnect = async () => {
+      const port = await navigator.serial.requestPort();
+      console.log(port);
+      const info = port.getInfo();
+      console.log(info);
+      await connect(port);
+    };
+
+    const handleClickDisconnect = async () => {
+      if (currentPort) {
+        keepReading = false;
+        if (currentReader) {
+          try {
+            await currentReader.cancel();
+          } catch (e) {
+            // Ignore cancel errors
+          }
+          currentReader = null;
+        }
+        if (readableStreamClosed) {
+          try {
+            await readableStreamClosed;
+          } catch (e) {
+            // Ignore stream closed errors
+          }
+          readableStreamClosed = null;
+        }
+        try {
+          await currentPort.close();
+        } catch (e) {
+          // Ignore close errors
+        }
+        currentPort = null;
+        isConnected = false;
+        displayConnectionState();
+      }
+    };
+
+    const connect = async (port) => {
+      currentPort = port;
+      isConnected = true;
+      keepReading = true;
+      displayConnectionState();
+
+      await port.open({ baudRate: 115200 });
+
+      port.addEventListener("disconnect", () => {
+        console.log("Disconnected");
+        keepReading = false;
+        isConnected = false;
+        currentPort = null;
+        currentReader = null;
+        displayConnectionState();
+      });
+
+      const decoder = new TextDecoderStream();
+      readableStreamClosed = port.readable.pipeTo(decoder.writable);
+
+      const lineBreakTransformer = new TransformStream({
+        transform(chunk, controller) {
+          const text = chunk;
+          const lines = text.split("\n");
+          lines[0] = (this.remainder || "") + lines[0];
+          this.remainder = lines.pop();
+          lines.forEach((line) => controller.enqueue(line));
+        },
+        flush(controller) {
+          if (this.remainder) {
+            controller.enqueue(this.remainder);
+          }
+        },
+      });
+
+      const inputStream = decoder.readable.pipeThrough(lineBreakTransformer);
+      currentReader = inputStream.getReader();
+
+      try {
+        while (keepReading) {
+          const { value, done } = await currentReader.read();
+          if (done) {
+            break;
+          }
+          try {
+            const json = JSON.parse(value);
+            if (json.sensor === "potmeter") {
+              updateDisplay(json.data[0]);
+            }
+          } catch (error) {
+            // JSON parse error, ignore
+          }
+        }
+      } catch (error) {
+        if (keepReading) {
+          console.error(error);
+        }
+      } finally {
+        try {
+          currentReader.releaseLock();
+        } catch (e) {
+          // Ignore
+        }
+        currentReader = null;
+      }
+    };
+
+    const updateDisplay = (value) => {
+      // Calculate percentage (assuming 12-bit ADC: 0-4095)
+      const percent = Math.round((value / 4095) * 100);
+      
+      $potmeterValues.innerHTML = `
+        <div style="margin-bottom: 15px;">
+          <strong>Potmeter Value:</strong> ${value} (${percent}%)
+          <div style="background: #ddd; height: 15px; border-radius: 8px; margin-top: 5px;">
+            <div style="background: #007bff; height: 100%; width: ${percent}%; border-radius: 8px; transition: width 0.05s;"></div>
+          </div>
+        </div>
+      `;
+    };
+
+    const displaySupportedState = () => {
+      if (hasWebSerial) {
+        $notSupported.style.display = "none";
+        $supported.style.display = "block";
+      } else {
+        $notSupported.style.display = "block";
+        $supported.style.display = "none";
+      }
+    };
+
+    const displayConnectionState = () => {
+      if (isConnected) {
+        $notConnected.style.display = "none";
+        $connected.style.display = "block";
+      } else {
+        $notConnected.style.display = "block";
+        $connected.style.display = "none";
+      }
+    };
+
+    init();
+
+  </script>
+</body>
+</html>

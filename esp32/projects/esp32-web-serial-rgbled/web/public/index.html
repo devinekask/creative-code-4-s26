@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arduino Web Serial RGB LED</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    .controls {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 5px;
+    }
+    .slider-group {
+      margin-bottom: 20px;
+    }
+    .slider-group label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .slider-group input[type="range"] {
+      width: 100%;
+      height: 15px;
+      border-radius: 8px;
+      appearance: none;
+      background: #ddd;
+      outline: none;
+    }
+    .slider-group input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 25px;
+      height: 25px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    #r::-webkit-slider-thumb { background: #dc3545; }
+    #g::-webkit-slider-thumb { background: #28a745; }
+    #b::-webkit-slider-thumb { background: #007bff; }
+    .slider-value {
+      text-align: right;
+      font-family: monospace;
+      font-size: 14px;
+      color: #666;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .status.connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status.disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .color-preview {
+      width: 100%;
+      height: 80px;
+      border-radius: 8px;
+      margin-top: 20px;
+      border: 2px solid #ccc;
+      transition: background-color 0.1s;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Web Serial RGB LED</h1>
+    <div id="not-supported">
+      <p>⚠️ Web Serial is not supported in this browser.</p>
+      <p>Please use Chrome or Edge on desktop.</p>
+    </div>
+    <div id="supported">
+      <div id="not-connected">
+        <button id="connectButton">Connect to Serial Device</button>
+        <p class="status disconnected">Not connected</p>
+      </div>
+      <div id="connected">
+        <button id="disconnectButton">Disconnect</button>
+        <p class="status connected">✓ Connected to Arduino</p>
+        <h3>RGB Controls:</h3>
+        <div class="controls">
+          <div class="slider-group">
+            <label for="r">Red</label>
+            <input type="range" min="0" max="255" value="0" id="r">
+            <div class="slider-value" id="rValue">0</div>
+          </div>
+          <div class="slider-group">
+            <label for="g">Green</label>
+            <input type="range" min="0" max="255" value="0" id="g">
+            <div class="slider-value" id="gValue">0</div>
+          </div>
+          <div class="slider-group">
+            <label for="b">Blue</label>
+            <input type="range" min="0" max="255" value="0" id="b">
+            <div class="slider-value" id="bValue">0</div>
+          </div>
+          <div id="colorPreview" class="color-preview" style="background-color: rgb(0, 0, 0);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+
+    // app state
+    const hasWebSerial = "serial" in navigator;
+    let isConnected = false;
+    let currentPort = null;
+    let writer = null;
+    let writableStreamClosed = null;
+
+    const $notSupported = document.getElementById("not-supported");
+    const $supported = document.getElementById("supported");
+    const $notConnected = document.getElementById("not-connected");
+    const $connected = document.getElementById("connected");
+
+    const $connectButton = document.getElementById("connectButton");
+    const $disconnectButton = document.getElementById("disconnectButton");
+
+    const $r = document.getElementById("r");
+    const $g = document.getElementById("g");
+    const $b = document.getElementById("b");
+    const $rValue = document.getElementById("rValue");
+    const $gValue = document.getElementById("gValue");
+    const $bValue = document.getElementById("bValue");
+    const $colorPreview = document.getElementById("colorPreview");
+
+    const boardSettings = {usbProductId: 21971, usbVendorId: 6790};
+    let connectedArduinoPorts = [];
+
+    const init = async () => {
+      displaySupportedState();
+      if (!hasWebSerial) return;
+      displayConnectionState();
+      navigator.serial.addEventListener('connect', (e) => {
+        const port = e.target;
+        const info = port.getInfo();
+        console.log('connect', port, info);
+        if (isArduinoPort(port)) {
+          connectedArduinoPorts.push(port);
+          if (!isConnected) {
+            connect(port);
+          }
+        }
+      });
+
+      navigator.serial.addEventListener('disconnect', (e) => {
+        const port = e.target;
+        const info = port.getInfo();
+        console.log('disconnect', port, info);
+        connectedArduinoPorts = connectedArduinoPorts.filter(p => p !== port);
+      });
+
+      const ports = await navigator.serial.getPorts();
+      connectedArduinoPorts = ports.filter(isArduinoPort);
+
+      console.log('Ports');
+      ports.forEach(port => {
+        const info = port.getInfo();
+        console.log(info);
+      });
+      console.log('Connected Arduino ports');
+      connectedArduinoPorts.forEach(port => {
+        const info = port.getInfo();
+        console.log(info);
+      });
+
+      if (connectedArduinoPorts.length > 0) {
+        connect(connectedArduinoPorts[0]);
+      }
+
+      $connectButton.addEventListener("click", handleClickConnect);
+      $disconnectButton.addEventListener("click", handleClickDisconnect);
+
+      $r.addEventListener("input", handleInput);
+      $g.addEventListener("input", handleInput);
+      $b.addEventListener("input", handleInput);
+    };
+
+    const isArduinoPort = (port) => {
+      const info = port.getInfo();
+      return info.usbProductId === boardSettings.usbProductId && info.usbVendorId === boardSettings.usbVendorId;
+    };
+
+    const handleClickConnect = async () => {
+      const port = await navigator.serial.requestPort();
+      console.log(port);
+      const info = port.getInfo();
+      console.log(info);
+      await connect(port);
+    };
+
+    const handleClickDisconnect = async () => {
+      if (currentPort) {
+        if (writer) {
+          try {
+            await writer.close();
+          } catch (e) {
+            // Ignore close errors
+          }
+          writer = null;
+        }
+        if (writableStreamClosed) {
+          try {
+            await writableStreamClosed;
+          } catch (e) {
+            // Ignore stream closed errors
+          }
+          writableStreamClosed = null;
+        }
+        try {
+          await currentPort.close();
+        } catch (e) {
+          // Ignore close errors
+        }
+        currentPort = null;
+        isConnected = false;
+        displayConnectionState();
+      }
+    };
+
+    const connect = async (port) => {
+      currentPort = port;
+      isConnected = true;
+      displayConnectionState();
+
+      await port.open({ baudRate: 115200 });
+
+      const textEncoder = new TextEncoderStream();
+      writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
+      writer = textEncoder.writable.getWriter();
+
+      port.addEventListener("disconnect", () => {
+        console.log("Disconnected");
+        isConnected = false;
+        currentPort = null;
+        writer = null;
+        displayConnectionState();
+      });
+    };
+
+    const handleInput = async () => {
+      const r = parseInt($r.value);
+      const g = parseInt($g.value);
+      const b = parseInt($b.value);
+
+      // Update value displays
+      $rValue.textContent = r;
+      $gValue.textContent = g;
+      $bValue.textContent = b;
+
+      // Update color preview
+      $colorPreview.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+
+      if (!isConnected || !writer) {
+        return;
+      }
+      await writer.write(JSON.stringify({ r, g, b }));
+      await writer.write("\n");
+    };
+
+    const displaySupportedState = () => {
+      if (hasWebSerial) {
+        $notSupported.style.display = "none";
+        $supported.style.display = "block";
+      } else {
+        $notSupported.style.display = "block";
+        $supported.style.display = "none";
+      }
+    };
+
+    const displayConnectionState = () => {
+      if (isConnected) {
+        $notConnected.style.display = "none";
+        $connected.style.display = "block";
+      } else {
+        $notConnected.style.display = "block";
+        $connected.style.display = "none";
+      }
+    };
+
+    init();
+
+  </script>
+</body>
+</html>
