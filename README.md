@@ -1,4 +1,4 @@
-# Creative Code 4, Spring 2025
+# Creative Code 4, Spring 2026
 
 This course is the 4th course on creative coding course at [Devine, a 3 year Bachelor degree](https://devine.be). 
 

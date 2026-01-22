@@ -1140,6 +1140,20 @@ Take a look at the `File > Examples > 02.Digital > BlinkWithoutDelay` example in
 
 ## Bluetooth with the ESP32
 
+Our ESP32 board also has bluetooth low energy (BLE) capabilities. This allows us to set up wireless communication with our board, without the need for any wires or serial connections.
+
+Before we get started, there is some basic terminology to cover:
+- **GATT (Generic Attribute Profile)**: A protocol for communication between BLE devices. It defines how data is organized and exchanged.
+- **Services**: Collections of characteristics that define a specific functionality or feature of a BLE device.
+- **Characteristics**: Individual data points within a service. They can be read, written, or notified.
+- **UUID (Universally Unique Identifier)**: A unique identifier for services and characteristics.
+
+Basically, a BLE device (like our ESP32) can have multiple services. Each service has a unique UUID and each service can have multiple characteristics. Each characteristic also has a unique UUID. We will use a BLE **characteristic** per sensor or output we want to read or control. This means we won't need JSON parsing or complex serial communication - we can just read and write values directly to the characteristics.
+
+### Preventing chaos in class
+
+When multiple ESP32 boards are in range, it can be hard to figure out which device is which. To prevent chaos in class, you will need to use a unique name for your board. You'll do this in your Arduino sketch.
+
 TODO.
 
 ## Using 5V components with the ESP32
@@ -1161,7 +1175,7 @@ There's a whole world of components that work well with your board. Build and te
 
 - Piezzo sound: <https://docs.arduino.cc/built-in-examples/digital/toneMelody>
 - DC motor: <https://learn.adafruit.com/adafruit-arduino-lesson-13-dc-motors/>
-- Servo motor: <https://learn.adafruit.com/adafruit-arduino-lesson-14-servo-motors>
+- Servo motor: https://github.com/madhephaestus/ESP32Servo
 
 ## Other things to check
 
