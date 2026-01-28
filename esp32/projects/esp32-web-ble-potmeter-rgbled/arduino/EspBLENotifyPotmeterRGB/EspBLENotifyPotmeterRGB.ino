@@ -3,7 +3,7 @@
 #include <BLEUtils.h>
 
 // Make sure to set a unique name for your device here:
-#define DEVICE_NAME "BLE RGB Led"
+#define DEVICE_NAME "BLE Potmeter RGB"
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -12,6 +12,9 @@
 #define CHARACTERISTIC_UUID_R      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_G      "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_B      "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHARACTERISTIC_X_UUID      "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
+
+const int xPin = 15;
 
 // pins for the LEDs:
 const int redPin = 4;
@@ -19,8 +22,15 @@ const int greenPin = 5;
 const int bluePin = 6;
 
 BLEServer *pServer = NULL;
+BLECharacteristic *pCharacteristicX = NULL;
+
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
+
+int prevX = 0;
+
+unsigned long previousMillis = 0;
+const unsigned long interval = 50;
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
@@ -97,6 +107,11 @@ void setup() {
   BLECharacteristic *pBCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_B, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
   pBCharacteristic->setCallbacks(new BlueCallback());
 
+  pCharacteristicX = pService->createCharacteristic(
+    CHARACTERISTIC_X_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
+
   // Start the service
   pService->start();
 
@@ -111,6 +126,18 @@ void setup() {
 }
 
 void loop() {
+  unsigned long currentMillis = millis();
+  
+  // notify changed values (non-blocking)
+  if (deviceConnected && (currentMillis - previousMillis >= interval)) {
+    previousMillis = currentMillis;
+    int xValue = analogRead(xPin);
+    if (xValue != prevX) {
+      pCharacteristicX->setValue((uint8_t *)&xValue, 4);
+      pCharacteristicX->notify();
+      prevX = xValue;
+    }
+  }
   // disconnecting
   if (!deviceConnected && oldDeviceConnected) {
     delay(500);                   // give the bluetooth stack the chance to get things ready

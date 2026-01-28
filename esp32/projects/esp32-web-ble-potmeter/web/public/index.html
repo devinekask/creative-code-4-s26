@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Arduino Web Bluetooth Notifications</title>
+  <title>Arduino Web Bluetooth Potmeter</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -59,7 +59,7 @@
 </head>
 <body>
   <div id="app">
-    <h1>Web Bluetooth Notifications</h1>
+    <h1>Web Bluetooth Potmeter</h1>
     <div id="not-supported">
       <p>⚠️ Web Bluetooth is not supported in this browser.</p>
       <p>Please use Chrome, Edge, or Opera on desktop, or Chrome on Android.</p>
@@ -72,9 +72,9 @@
       <div id="connected">
         <button id="disconnectButton">Disconnect</button>
         <p class="status connected">✓ Connected to <span id="deviceName"></span></p>
-        <h3>Received Notifications:</h3>
+        <h3>Potmeter Value:</h3>
         <div id="notifications">
-          <p><em>Waiting for notifications...</em></p>
+          <p><em>Waiting for data...</em></p>
         </div>
       </div>
     </div>
@@ -85,12 +85,14 @@
     const hasWebBluetooth = "bluetooth" in navigator;
     let isConnected = false;
     let bluetoothDevice = null;
-    let characteristic = null;
+    let characteristicX = null;
+
+    // potmeter state
+    let potmeterValue = 0;
 
     // UUIDs - these should match your ESP32 BLE service
-    // Using standard UUIDs for demonstration - adjust to match your device
-    const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
-    const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+    const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const CHARACTERISTIC_X_UUID = '6e400005-b5a3-f393-e0a9-e50e24dcca9e';
 
     const $notSupported = document.getElementById("not-supported");
     const $supported = document.getElementById("supported");
@@ -127,12 +129,13 @@
         console.log('Getting Service...');
         const service = await server.getPrimaryService(SERVICE_UUID);
         
-        console.log('Getting Characteristic...');
-        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        console.log('Getting Characteristics...');
+        characteristicX = await service.getCharacteristic(CHARACTERISTIC_X_UUID);
         
         console.log('Starting Notifications...');
-        await characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', handleNotification);
+        await characteristicX.startNotifications();
+
+        characteristicX.addEventListener('characteristicvaluechanged', (e) => handleNotification(e));
         
         isConnected = true;
         $deviceName.textContent = bluetoothDevice.name || 'Unknown Device';
@@ -156,46 +159,45 @@
       console.log('Bluetooth Device disconnected');
       isConnected = false;
       bluetoothDevice = null;
-      characteristic = null;
+      characteristicX = null;
       displayConnectionState();
     };
 
     const handleNotification = (event) => {
       const value = event.target.value;
-      // Decode the received data
-      const decoder = new TextDecoder('utf-8');
-      const data = decoder.decode(value);
       
-      console.log('Notification received:', data);
-      
-      // Try to parse as JSON, otherwise display as text
-      let displayData;
-      try {
-        const jsonData = JSON.parse(data);
-        displayData = JSON.stringify(jsonData, null, 2);
-      } catch {
-        displayData = data;
-      }
-      
-      // Add notification to the list
-      const timestamp = new Date().toLocaleTimeString();
-      const notificationEl = document.createElement('div');
-      notificationEl.className = 'notification';
-      notificationEl.innerHTML = `<strong>${timestamp}</strong>: ${displayData}`;
-      
+      // Read as 32-bit integer (little-endian) - matches Arduino's 4-byte int
+      potmeterValue = value.getInt32(0, true); // true = little-endian
+      updateDisplay();
+    };
+
+    const updateDisplay = () => {
       // Remove "waiting" message if present
       const waitingMsg = $notifications.querySelector('em');
       if (waitingMsg) {
         waitingMsg.parentElement.remove();
       }
-      
-      // Add new notification at the top
-      $notifications.insertBefore(notificationEl, $notifications.firstChild);
-      
-      // Limit to last 50 notifications
-      while ($notifications.children.length > 50) {
-        $notifications.removeChild($notifications.lastChild);
+
+      // Update or create the value display
+      let valueDisplay = document.getElementById('valueDisplay');
+      if (!valueDisplay) {
+        valueDisplay = document.createElement('div');
+        valueDisplay.id = 'valueDisplay';
+        valueDisplay.className = 'notification';
+        $notifications.appendChild(valueDisplay);
       }
+      
+      // Calculate percentages (assuming 12-bit ADC: 0-4095)
+      const xPercent = Math.round((potmeterValue / 4095) * 100);
+      
+      valueDisplay.innerHTML = `
+        <div style="margin-bottom: 15px;">
+          <strong>X Axis:</strong> ${potmeterValue} (${xPercent}%)
+          <div style="background: #ddd; height: 15px; border-radius: 8px; margin-top: 5px;">
+            <div style="background: #007bff; height: 100%; width: ${xPercent}%; border-radius: 8px; transition: width 0.05s;"></div>
+          </div>
+        </div>
+      `;
     };
 
     const displaySupportedState = () => {

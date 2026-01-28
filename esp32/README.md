@@ -1154,7 +1154,194 @@ Basically, a BLE device (like our ESP32) can have multiple services. Each servic
 
 When multiple ESP32 boards are in range, it can be hard to figure out which device is which. To prevent chaos in class, you will need to use a unique name for your board. You'll do this in your Arduino sketch.
 
-TODO.
+### BLE RGB Led
+
+Let's hook up a RGB Led to our ESP32, and control it over BLE.
+
+Start with the following base sketch - **make sure to set a unique DEVICE_NAME for your board, or it will be hard to find your board when multiple boards are in range!**
+
+```c
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+
+// Make sure to set a unique name for your device here:
+#define DEVICE_NAME "BLE RGB Led"
+
+// See the following for generating UUIDs:
+// https://www.uuidgenerator.net/
+
+#define SERVICE_UUID               "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHARACTERISTIC_UUID_R      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+
+// pins for the LEDs:
+const int redPin = 4;
+
+BLEServer *pServer = NULL;
+bool deviceConnected = false;
+bool oldDeviceConnected = false;
+
+class MyServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *pServer) {
+    deviceConnected = true;
+    Serial.println("Device connected");
+  };
+
+  void onDisconnect(BLEServer *pServer) {
+    deviceConnected = false;
+    Serial.println("Device disconnected");
+  }
+};
+
+class RedCallback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    String rxValue = pCharacteristic->getValue();
+    if (rxValue.length() > 0) {
+      uint8_t value = (uint8_t)rxValue[0];
+      analogWrite(redPin, value);
+      Serial.print("Red: ");
+      Serial.println(value);
+    }
+  }
+};
+
+void setup() {
+  Serial.begin(115200);
+
+  // Set up LED pins
+  pinMode(redPin, OUTPUT);
+
+  // Create the BLE Device
+  BLEDevice::init(DEVICE_NAME);
+
+  // Create the BLE Server
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+
+  // Create the BLE Service
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  BLECharacteristic *pRCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_R, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+  pRCharacteristic->setCallbacks(new RedCallback());
+
+  // Start the service
+  pService->start();
+
+  // Start advertising
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);  // This is crucial for Web Bluetooth to find the device!
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  // helps with iPhone connection issues
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+  Serial.println("Waiting a client connection to notify...");
+}
+
+void loop() {
+  // disconnecting
+  if (!deviceConnected && oldDeviceConnected) {
+    delay(500);                   // give the bluetooth stack the chance to get things ready
+    BLEDevice::startAdvertising();  // restart advertising
+    Serial.println("Started advertising again...");
+    oldDeviceConnected = false;
+  }
+  // connecting
+  if (deviceConnected && !oldDeviceConnected) {
+    // do stuff here on connecting
+    oldDeviceConnected = true;
+  }
+}
+```
+
+We'll now create a simple web page to control the red channel of the RGB led over BLE. It's actually a bit simpler than Web Serial, as we don't need to deal with serial ports, baud rates or JSON parsing. You will need to make sure your UDIDs in javascript match the ones in your Arduino sketch.
+
+Here are the steps to connect to the BLE device and control the red channel:
+
+```javascript
+const bluetoothDevice = await navigator.bluetooth.requestDevice({
+  filters: [{ services: [SERVICE_UUID] }],
+});
+
+const server = await bluetoothDevice.gatt.connect();
+const service = await server.getPrimaryService(SERVICE_UUID);
+const rCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID_R);
+```
+
+Writing a value to the characteristic is as simple as this:
+
+```javascript
+await characteristic.writeValueWithoutResponse(new Uint8Array([value]));
+```
+
+Adjust the previous Serial RGB Led example to use BLE instead of Web Serial.
+
+### BLE Sensor Data
+
+We can also receive sensor data over BLE. For this, we will need to set up a characteristic with the `PROPERTY_NOTIFY` property. This allows the ESP32 to send updates to the connected client whenever the value changes.
+
+In order to accomplish this, add a global BLECharacteristic pointer for the characteristic you want to notify on:
+
+```c
+BLEServer *pServer = NULL; // you already have this line
+BLECharacteristic *pCharacteristicX = NULL; // but add this global pointer
+```
+
+Also add a unique UUID for the characteristic, and store the pin number in a global const. Also create a variable to hold the last sent value, to prevent sending duplicate notifications:
+
+```c
+#define CHARACTERISTIC_X_UUID      "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
+
+const int xPins = 15;
+int prevX = 0;
+```
+
+In the setup function, create the characteristic with the notify property:
+
+```c
+pCharacteristicX = pService->createCharacteristic(
+  CHARACTERISTIC_X_UUID,
+  BLECharacteristic::PROPERTY_NOTIFY
+);
+```
+
+In your loop function, read the sensor value, and if it has changed, send a notification:
+
+```c
+int xValue = analogRead(xPin);
+// notify changed values
+if (deviceConnected) {
+  if (xValue != prevX) {
+    pCharacteristicX->setValue((uint8_t *)&xValue, 4);
+    pCharacteristicX->notify();
+  }
+  delay(50);
+}
+prevX = xValue;
+```
+
+#### Reading BLE notifications in JavaScript
+
+To read notifications from a BLE characteristic in JavaScript, you need to set up an event listener for the `characteristicvaluechanged` event. Here's how you can do it:
+
+```javascript
+characteristicX = await service.getCharacteristic(CHARACTERISTIC_X_UUID);        
+console.log('Starting Notifications...');
+await characteristicX.startNotifications();
+
+characteristicX.addEventListener('characteristicvaluechanged', (e) => handleNotification(e));
+```
+
+In the event handler, you can then read the value from the event target:
+
+```javascript
+const value = event.target.value;
+// Read as 32-bit integer (little-endian) - matches 4-byte int
+const potmeterValue = value.getInt32(0, true); // true = little-endian
+```
+
+Visualize this value in your web application, for example using a slider or a graph.
+
+Finally, combine both the RGB Led control and potentiometer reading examples into one app, using BLE.
 
 ## Using 5V components with the ESP32
 
