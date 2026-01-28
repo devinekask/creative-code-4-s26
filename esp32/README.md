@@ -1345,7 +1345,21 @@ Finally, combine both the RGB Led control and potentiometer reading examples int
 
 ## Using 5V components with the ESP32
 
-TODO.
+The ESP32 works on 3.3V logic levels, while many common components (like servos, motors, etc) work on 5V logic levels. Connecting a 5V component directly to the ESP32 will not work properly, and can even damage your board.
+
+To safely use 5V components with the ESP32, you can use a power module that provides both a 5V (to power 5V components) and 3.3V (which we can use to power the ESP32 itself) output. If you take a closer look to the power module, you'll see that there are output voltage pins on both sides of the module, together with jumper pins to select which voltage to output on those pins.
+
+Before hooking it up, make sure to set both jumpers to the OFF position, like you see in the image below:
+
+![power module closeup](images/power-module.jpg)
+
+We'll use one side of our breadboard to work with 5V and the other side to work with 3.3V. It'll be crucial to keep these two voltage levels separated, to prevent damage to your board.
+
+In the image below, we've hooked up the power module to the breadboard, and connected the ESP32 power and ground to the bottom rails of the breadboard. On the power module, we used the jumpers to set the bottom rail to 3.3V, and the top rail to 5V:
+
+![ESP32 with power module on breadboard](images/esp32-power-module-with-esp.jpg)
+
+If you now plug in the power module to a 12V DC adapter, you should see the ESP32 power up correctly, even without USB power. You should be able to run the BLE RGB Led sketch as before, without any wired connection between your computer and the ESP32!
 
 ## Components to test
 
