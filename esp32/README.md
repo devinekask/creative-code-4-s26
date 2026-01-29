@@ -1403,15 +1403,24 @@ There's a whole world of components that work well with your board. Build and te
 ### Inputs
 
 - Button: <https://docs.arduino.cc/built-in-examples/digital/Button>
-- Potentiometer: <https://docs.arduino.cc/built-in-examples/basics/AnalogReadSerial> - try this out with the joystick from your kit as well! The joystick is a combination of 2 potentionmeters and one push button.
-- Photoresistor: <https://create.arduino.cc/projecthub/MisterBotBreak/how-to-use-a-photoresistor-46c5eb>. You can use this to create a laser-tripwire (<https://create.arduino.cc/projecthub/digitalfendi/super-simple-fun-laser-tripwire-aa56c9>), ask the professor for a laser diode to play with.
-- Ultrasonic Sensor: <https://docs.arduino.cc/built-in-examples/sensors/Ping>
+- Photoresistor: <https://projecthub.arduino.cc/ccPegasus/photoresistor-brightness-sensor-519a6d>. You can use this to create a laser-tripwire (<https://projecthub.arduino.cc/polyhedra64/dynamic-laser-tripwirealarm-3544a8>), ask the professor for a laser diode to play with.
+- Joystick: https://projecthub.arduino.cc/hibit/using-joystick-module-with-arduino-0ffdd4
+- Rotary encoder: https://projecthub.arduino.cc/SURYATEJA/rotary-encoder-or-arduino-360-degree-encoder-f8cd8a
+- Temperature & Humidity sensor: https://projecthub.arduino.cc/rudraksh2008/temperature-and-humidity-sensor-with-arduino-1d52a6
+- Thermistor: https://projecthub.arduino.cc/Marcazzan_M/how-easy-is-it-to-use-a-thermistor-81ae74
+- Piezo knock: https://docs.arduino.cc/built-in-examples/sensors/Knock/
+- PIR motion sensor: https://projecthub.arduino.cc/electronicsfan123/interfacing-arduino-uno-with-pir-motion-sensor-593b6b
+- RFID reader: https://www.instructables.com/Arduino-MFRC522-RFID-READER/
+- Stretch Sensor: https://www.adafruit.com/product/519?srsltid=AfmBOoob-vlE-DSc4OlAYX_nOqxITjD9v5YpWqr_AHswMrUZBfphjXMl
 
 ### Outputs
 
 - Piezzo sound: <https://docs.arduino.cc/built-in-examples/digital/toneMelody>
 - DC motor: <https://learn.adafruit.com/adafruit-arduino-lesson-13-dc-motors/>
-- Servo motor: https://github.com/madhephaestus/ESP32Servo
+- Relay Module: https://arduinogetstarted.com/tutorials/arduino-relay
+- 7-segment display: https://projecthub.arduino.cc/aboda243/get-started-with-seven-segment-5754a8
+- 12V Led strip: https://www.instructables.com/ARDUINO-CONTROLLED-12v-RGB-LED-STRIP/
+- 5V NeoPixel strip: https://learn.adafruit.com/adafruit-neopixel-uberguide/the-magic-of-neopixels
 
 ## Other things to check
 
