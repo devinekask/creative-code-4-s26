@@ -14,7 +14,7 @@ We will be using the Arduino IDE to program our ESP32 board. The Arduino IDE is 
 
 You can download the Arduino IDE at https://www.arduino.cc/en/software/
 
-The board we're using in this chapter is an ESP32 S3 N16R8 board. This particular board has 2 USB-C ports, an onboard RGB led and lots of GPIO pins to connect sensors and other electronics to. It has built-in WiFi, Bluetooth capabilities and can emulate a keyboard and mouse as well.
+The board we're using in this chapter is an **ESP32 S3 N16R8 board**. This particular board has 2 USB-C ports, an onboard RGB led and lots of GPIO pins to connect sensors and other electronics to. It has built-in WiFi, Bluetooth capabilities and can emulate a keyboard and mouse as well.
 
 ### Setting up the Arduino IDE for ESP32
 
