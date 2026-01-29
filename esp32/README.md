@@ -1345,9 +1345,9 @@ Finally, combine both the RGB Led control and potentiometer reading examples int
 
 ## Using 5V components with the ESP32
 
-The ESP32 works on 3.3V logic levels, while many common components (like servos, motors, etc) work on 5V logic levels. Connecting a 5V component directly to the ESP32 will not work properly, and can even damage your board.
+The ESP32 works on 3.3V logic levels, while many common components (like servos, ultrasonic sensors, etc) work on 5V logic levels. Connecting a 5V component directly to the ESP32 will not work properly, and can even damage your board.
 
-To safely use 5V components with the ESP32, you can use a power module that provides both a 5V (to power 5V components) and 3.3V (which we can use to power the ESP32 itself) output. If you take a closer look to the power module, you'll see that there are output voltage pins on both sides of the module, together with jumper pins to select which voltage to output on those pins.
+To safely use 5V components with the ESP32, you can use a power module such as the MB102 power module that provides both a 5V (to power 5V components) and 3.3V (which we can use to power the ESP32 itself) output. If you take a closer look to the power module, you'll see that there are output voltage pins on both sides of the module, together with jumper pins to select which voltage to output on those pins.
 
 Before hooking it up, make sure to set both jumpers to the OFF position, like you see in the image below:
 
@@ -1355,11 +1355,46 @@ Before hooking it up, make sure to set both jumpers to the OFF position, like yo
 
 We'll use one side of our breadboard to work with 5V and the other side to work with 3.3V. It'll be crucial to keep these two voltage levels separated, to prevent damage to your board.
 
-In the image below, we've hooked up the power module to the breadboard, and connected the ESP32 power and ground to the bottom rails of the breadboard. On the power module, we used the jumpers to set the bottom rail to 3.3V, and the top rail to 5V:
+In the image below, we've hooked up the power module to the breadboard:
+
+- On the power module, we used the jumpers to set the bottom rail to 3.3V, and the top rail to 5V:
+- There is a wire connecting the 5V+ on the top rail of the breadboard to the 5Vin pin of the ESP32.
+- There is a wire connecting the GND on the bottom rail of the breadboard to the GND pin of the ESP32.
 
 ![ESP32 with power module on breadboard](images/esp32-power-module-with-esp.jpg)
 
 If you now plug in the power module to a 12V DC adapter, you should see the ESP32 power up correctly, even without USB power. You should be able to run the BLE RGB Led sketch as before, without any wired connection between your computer and the ESP32!
+
+### Servo motor
+
+A servo motor is a motor that can be controlled to move to a specific angle. It usually has three wires: power (5V), ground, and signal (control).
+
+Hooking it up is pretty straightforward:
+- Connect the power wire (usually red) to the 5V rail on your breadboard
+- Connect the ground wire (usually black or brown) to the GND rail on your breadboard
+- Connect the signal wire (usually yellow, orange or white) to a PWM-capable pin on the ESP32 (for example pin 17)
+
+![ESP32 with servo motor on breadboard](images/esp32-servo.png)
+
+To control it from your Arduino sketch, you can use the ESP32Servo library. Install it via the Arduino Library Manager.
+
+Open up the `File > Examples > ESP32Servo > Sweep` example, and change the pin number to the one you used for the signal wire. Upload the sketch, and you should see the servo sweeping back and forth.
+
+### Ultrasonic sensor
+
+Another intereseting sensor - that does require 5V power - is the ultrasonic distance sensor. It can measure distances by sending out an ultrasonic pulse and measuring the time it takes for the echo to return.
+
+One of the most common ultrasonic sensors is the HC-SR04. It has four pins: VCC (5V), GND, Trig (trigger), and Echo.
+
+![HC-SR04 ultrasonic sensor](images/hc-sr04.jpg)
+
+Hooking it up is also straightforward:
+- Connect the VCC pin to the 5V rail on your breadboard
+- Connect the GND pin to the GND rail on your breadboard
+- Connect the Trig pin to a digital pin on the ESP32 (for example pin 13)
+- Connect the Echo pin to another digital pin on the ESP32 (for example pin 12)
+
+Install the NewPing library via the Arduino Library Manager, and open up the `File > Examples > NewPing > NewPingExample` example. Change the pin numbers to match your wiring, upload the sketch, and open the Serial Monitor. You should see distance measurements being printed out.
 
 ## Components to test
 
