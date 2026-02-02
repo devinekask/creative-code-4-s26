@@ -3,6 +3,7 @@ const app = express()
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
+const os = require('os');
 const io = new Server(server);
 const port = process.env.PORT || 80;
 
@@ -32,5 +33,13 @@ io.on('connection', socket => {
 app.use(express.static('public'));
 
 server.listen(port, () => {
+  const networkInterfaces = os.networkInterfaces();
+  for (const interfaceName in networkInterfaces) {
+    for (const iface of networkInterfaces[interfaceName]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        console.log(`http://${iface.address}`);
+      }
+    }
+  }
   console.log(`App listening on port ${port}!`);
 });

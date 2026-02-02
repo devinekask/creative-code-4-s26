@@ -10,12 +10,17 @@
     {
       const $h1 = document.querySelector('h1');
 
-      const apiUrl = `https://api.coindesk.com/v1/bpi/currentprice.json`;
+      const apiUrl = `https://cors-anywhere.com/https://www.bitstamp.net/api/v2/ticker/btceur/`;
 
       const poll = async () => {
         console.log(`Execute poll`);
-        const data = await (await fetch(apiUrl)).json();
-        $h1.innerHTML = `1 BTC = ${data.bpi.EUR.rate} EUR`;
+        try {
+          const data = await (await fetch(apiUrl)).json();
+          console.log(data);
+          $h1.innerHTML = `1 BTC = ${new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(data.last)}`;
+        } catch (err) {
+          console.error(err);
+        }
         setTimeout(() => poll(), 10000);
       };
 
